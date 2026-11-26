@@ -1,16 +1,16 @@
 # beta1-datachain
 
-Chaîne de données de la beta 1 de **La Bataille de France** : elle transforme les données ouvertes de l'IGN (BD TOPO, LiDAR HD, RGE ALTI) et de l'INSEE (carreaux de population) en **tiles** de 1 km, que le serveur publie et que le client télécharge à la demande.
+Chaîne de données de la beta 1 de **La Bataille de France** : elle transforme les données ouvertes de l'IGN (BD TOPO, RGE ALTI 1 m) et de l'INSEE (carreaux de population) en **tiles** de 1 km, que le serveur publie et que le client télécharge à la demande.
 
 **En construction** : le code est porté des prototypes P-07 et P-26, étape par étape.
 
 | Étape | État |
 |---|---|
 | Manifeste des sources et téléchargement | fait |
-| LiDAR HD (WMS, blocs de 5 km) | à porter (P-26 `outils/lidar.py`) |
 | Chaîne (un processus par département), jeu d'essai de Brest en CI | à porter (P-26 `chaine/`) |
 | Graphe routier national (CCH), pyramide de la carte | à porter |
-| Publication immuable des tiles (un dossier par département et par hash) | à porter |
+| Publication adressée par ses entrées (manifeste + digest de l'image) | à porter |
+| Image et Job du chart `game` (PVC `sources` et `tiles`, [H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) | à faire |
 
 Format des tiles et géographie : [beta1-common](https://github.com/labatailledefrance/beta1-common).
 
@@ -35,7 +35,7 @@ target/release/sources inventaire              # flux Atom de la Géoplateforme,
 target/release/sources empreintes --destination data/sources   # SHA-256 des fichiers présents dont le MD5 est bon
 ```
 
-France entière : 414 fichiers, 718 Go (BD TOPO, RGE ALTI 1 m et 5 m, INSEE), sans le LiDAR HD.
+France entière : 414 fichiers, 718 Go (BD TOPO, RGE ALTI 1 m et 5 m, INSEE). Pas de LiDAR HD ([B-01](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#b-01--chaîne-de-traitement-des-données-ign)).
 
 ## Licences
 
