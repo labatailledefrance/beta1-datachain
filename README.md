@@ -12,7 +12,7 @@ Chaîne de données de la beta 1 de **La Bataille de France** : elle transforme 
 | Publication adressée par ses entrées (manifeste + digest de l'image) | à porter |
 | Image et Job du chart `game` (PVC `sources` et `tiles`, [H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) | à faire |
 
-Format des tiles et géographie : [beta1-common](https://github.com/labatailledefrance/beta1-common).
+Format des tiles (en-tête, sections, relief, codes) et géographie : [beta1-common](https://github.com/labatailledefrance/beta1-common) `tile`, partagé avec le serveur et le client ; la chaîne n'y ajoute que la compression zstd. `chaine controle` relit chaque tile avec les décodeurs du jeu.
 
 ## Sources
 

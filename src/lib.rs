@@ -17,7 +17,6 @@ pub mod telechargement;
 
 pub mod chaine;
 pub mod controle;
-pub mod decodage;
 pub mod depot;
 pub mod emprise;
 pub mod geo;

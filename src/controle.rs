@@ -2,10 +2,10 @@
 //! empreintes, décodage de toutes les sections, tiles et bâtiments en double,
 //! raccords du relief (bords égaux au nœud près), population, routes.
 
-use crate::decodage;
 use crate::erreur::{Contexte, Res};
-use crate::relief::{self, SANS};
 use crate::tuile::{self, Sec};
+use beta1_common::tile::relief::{self, NONE as SANS};
+use beta1_common::tile::sections;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -31,53 +31,81 @@ struct Vu {
     faux: Option<String>,
 }
 
+/// Décode tout ce qu'une tile contient, avec les décodeurs du jeu
+/// (`beta1_common`) : une section illisible est un défaut, pas un arrêt.
 fn voir(b: &[u8], dept: usize) -> Res<Vu> {
     let n = b.len().checked_sub(32).ctx("tile plus courte que son empreinte")?;
-    let faux = (blake3::hash(&b[..n]).as_bytes() != &b[n..]).then(|| "empreinte".to_string());
+    let mut faux = (blake3::hash(&b[..n]).as_bytes() != &b[n..]).then(|| "empreinte".to_string());
     let t = tuile::lire(b, false)?;
-    let e = &t.entete;
-    let bats = t.section(Sec::Bati)?.map(|s| decodage::bati(&s)).unwrap_or_default();
-    let routes_m = t
-        .section(Sec::Reseau)?
-        .map(|s| decodage::reseau(&s))
-        .unwrap_or_default()
-        .iter()
-        .filter(|m| !m.ferre)
-        .flat_map(|m| {
-            m.pts.windows(2).map(|s| ((s[1][0] - s[0][0]) as f64).hypot((s[1][1] - s[0][1]) as f64)).collect::<Vec<_>>()
-        })
-        .sum();
-    t.section(Sec::Ponts)?.map(|s| decodage::ponts(&s).len());
-    t.section(Sec::Zone)?.map(|s| decodage::zone(&s).1.len());
-    let com: u64 =
-        t.section(Sec::Communes)?.map(|s| decodage::communes(&s)).unwrap_or_default().iter().map(|c| c.2 as u64).sum();
-    let fin = t.section(Sec::Relief1m)?;
-    let bords = t.section(Sec::Relief)?.map(|s| {
-        let g = match &fin {
-            Some(f) => relief::decoder_deux(&s, f),
-            None => relief::decoder(&s, 2),
-        };
-        let m = g.m;
-        Bords {
-            src: e.flags >> 4 & 3,
-            b: [
-                (0..m).map(|j| g.get(0, j)).collect(),
-                (0..m).map(|j| g.get(m - 1, j)).collect(),
-                (0..m).map(|i| g.get(i, 0)).collect(),
-                (0..m).map(|i| g.get(i, m - 1)).collect(),
-            ],
+    let e = &t.header;
+    let mut bats = Vec::new();
+    let mut routes_m = 0.0;
+    let mut com = 0u64;
+    let mut bords = None;
+    let lu = (|| -> Res<()> {
+        if let Some(s) = t.section(Sec::Buildings)? {
+            bats = sections::buildings(&s).ctx("bâti")?;
         }
-    });
-    let faux =
-        faux.or((com != e.habitants as u64).then(|| format!("habitants {com} != {}", e.habitants)))
-            .or((bats.len() as u32 != e.nb_bat).then(|| "nb_bat".into()));
+        if let Some(s) = t.section(Sec::Network)? {
+            routes_m = sections::network(&s)
+                .ctx("réseau")?
+                .roads
+                .iter()
+                .flat_map(|m| {
+                    m.points.windows(2).map(|s| ((s[1][0] - s[0][0]) as f64).hypot((s[1][1] - s[0][1]) as f64))
+                })
+                .sum();
+        }
+        if let Some(s) = t.section(Sec::Bridges)? {
+            sections::bridges(&s).ctx("ponts")?;
+        }
+        if let Some(s) = t.section(Sec::Zone)? {
+            sections::zone(&s).ctx("zone")?;
+        }
+        if let Some(s) = t.section(Sec::Passable)? {
+            sections::passable(&s).ctx("franchissable")?;
+        }
+        if let Some(s) = t.section(Sec::Occupation)? {
+            sections::occupation(&s).ctx("occupation")?;
+        }
+        if let Some(s) = t.section(Sec::Places)? {
+            sections::places(&s).ctx("lieux")?;
+        }
+        if let Some(s) = t.section(Sec::Communes)? {
+            com = sections::communes(&s).ctx("communes")?.fragments.iter().map(|f| f.inhabitants as u64).sum();
+        }
+        let fin = t.section(Sec::Relief1m)?;
+        if let Some(s) = t.section(Sec::Relief)? {
+            let g = match &fin {
+                Some(f) => relief::decode_two(&s, f).ctx("relief 1 m")?,
+                None => relief::decode(&s, 2).ctx("relief")?,
+            };
+            let m = g.side;
+            bords = Some(Bords {
+                src: e.flags >> 4 & 3,
+                b: [
+                    (0..m).map(|j| g.get(0, j)).collect(),
+                    (0..m).map(|j| g.get(m - 1, j)).collect(),
+                    (0..m).map(|i| g.get(i, 0)).collect(),
+                    (0..m).map(|i| g.get(i, m - 1)).collect(),
+                ],
+            });
+        }
+        Ok(())
+    })();
+    if let Err(x) = lu {
+        faux = faux.or(Some(format!("section illisible : {x}")));
+    }
+    let faux = faux
+        .or((com != e.inhabitants as u64).then(|| format!("habitants {com} != {}", e.inhabitants)))
+        .or((bats.len() as u32 != e.buildings).then(|| "nb_bat".into()));
     Ok(Vu {
         zone: e.zone,
         ix: e.ix,
         iy: e.iy,
         dept,
         flags: e.flags,
-        habitants: e.habitants as u64,
+        habitants: e.inhabitants as u64,
         bats: bats.iter().map(|b| b.id).collect(),
         routes_m,
         bords,
@@ -201,7 +229,7 @@ pub fn executer(dossiers: &[PathBuf]) -> Res<usize> {
     println!(
         "octets par tile de terre : {}",
         sec.iter()
-            .map(|(s, n)| format!("{} {}", Sec::de(*s).map_or("?", Sec::nom), n / terre as u64))
+            .map(|(s, n)| format!("{} {}", Sec::from_u8(*s).map_or("?", Sec::name), n / terre as u64))
             .collect::<Vec<_>>()
             .join(", ")
     );

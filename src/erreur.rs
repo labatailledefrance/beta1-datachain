@@ -45,7 +45,8 @@ depuis!(
     parquet::errors::ParquetError,
     sevenz_rust2::Error,
     std::num::ParseIntError,
-    std::num::ParseFloatError
+    std::num::ParseFloatError,
+    beta1_common::codec::Invalid
 );
 
 /// `.ctx("…")` : convertit une `Option` ou un `Result` en `Res`, avec contexte.

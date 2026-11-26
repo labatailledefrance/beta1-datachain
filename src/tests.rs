@@ -47,9 +47,9 @@ fn raster_partage_exact_entre_tiles() {
 
 fn grille_test(r: usize) -> Noeuds {
     let mut g = Noeuds::new(r);
-    for j in 0..g.m {
-        for i in 0..g.m {
-            let k = j * g.m + i;
+    for j in 0..g.side {
+        for i in 0..g.side {
+            let k = j * g.side + i;
             g.cm[k] = if (i + j) % 97 == 0 {
                 relief::SANS
             } else {
@@ -64,11 +64,11 @@ fn grille_test(r: usize) -> Noeuds {
 fn relief_aller_retour() {
     for r in [1, 2, 5] {
         let g = grille_test(r);
-        let d = relief::decoder(&relief::encoder(&g, 1), r);
+        let d = relief::decoder(&relief::encoder(&g, 1), r).unwrap();
         assert_eq!(d.cm, g.cm);
         // Quantification idempotente : encoder le décodé redonne les mêmes octets.
         let e10 = relief::encoder(&g, 10);
-        let d10 = relief::decoder(&e10, r);
+        let d10 = relief::decoder(&e10, r).unwrap();
         assert_eq!(relief::encoder(&d10, 10), e10);
     }
 }
@@ -141,7 +141,7 @@ fn banc_relief() {
         let t0 = Instant::now();
         for _ in 0..20 {
             let b = zstd::bulk::decompress(&z, e.len()).unwrap();
-            std::hint::black_box(relief::decoder(&b, r));
+            let _ = std::hint::black_box(relief::decoder(&b, r));
         }
         println!("banc relief : pas {r} m, décodage {:.3} ms", t0.elapsed().as_secs_f64() * 1e3 / 20.0);
     }
