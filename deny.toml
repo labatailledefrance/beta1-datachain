@@ -5,6 +5,16 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Exceptions justifiées, à réexaminer à chaque mise à jour des dépendances.
+ignore = [
+  # parquet : texte en clair dans les filtres de Bloom à l'écriture d'un
+  # fichier chiffré. La chaîne ne fait que lire des Parquet en clair (feature
+  # « encryption » absente). Corrigé en 59.3.3 (2026-11-17) : à monter dès
+  # qu'elle a deux semaines (2026-12-01).
+  { id = "RUSTSEC-2026-0595", reason = "écriture chiffrée seulement ; la chaîne ne fait que lire, sans chiffrement" },
+  # chrono non maintenu, sans vulnérabilité connue : dépendance obligatoire de parquet.
+  { id = "RUSTSEC-2026-0543", reason = "non maintenu, pas de faille connue ; requis par parquet" },
+]
 
 [licenses]
 version = 2
