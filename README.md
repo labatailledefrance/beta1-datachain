@@ -9,8 +9,8 @@ Chaîne de données de la beta 1 de **La Bataille de France** : elle transforme 
 | Manifeste des sources et téléchargement | fait |
 | Chaîne (un processus par département), jeu d'essai de Brest en CI | fait |
 | Graphe routier national (CCH), pyramide de la carte | à porter |
-| Publication adressée par ses entrées (manifeste + digest de l'image) | à porter |
-| Image et Job du chart `game` (PVC `sources` et `tiles`, [H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) | à faire |
+| Publication adressée par ses entrées (manifeste + digest de l'image), binaire `datachain`, image signée | fait |
+| Job du chart `game` (PVC `sources` et `tiles`, [H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) | à faire |
 
 Format des tiles (en-tête, sections, relief, codes) et géographie : [beta1-common](https://github.com/labatailledefrance/beta1-common) `tile`, partagé avec le serveur et le client ; la chaîne n'y ajoute que la compression zstd. `chaine controle` relit chaque tile avec les décodeurs du jeu.
 
@@ -60,6 +60,25 @@ Le relief vient du RGE ALTI 1 m seul, le 5 m en secours ([B-01](https://github.c
 essais/brest.sh preparer /tmp/essai   # ~5 Go téléchargés, 3 min
 essais/brest.sh verifier /tmp/essai   # 12 s, 2,8 Go de mémoire
 ```
+
+## Publication complète : `datachain`
+
+Ce que lance le Job du chart `game` ([H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) : sources (téléchargement avec reprise), dérivés (GeoPackage, paquets de relief, carreaux de 1 km), référence nationale par zone, un processus `chaine` par département, contrôle croisé (raccords entre départements), puis publication. Le manifeste est **compilé dans le binaire** : le digest de l'image fixe les sources.
+
+```sh
+datachain --sources /donnees/sources --tiles /donnees/tiles --publication <id> [--zones D029,D974] [--processus 2 --threads 8]
+```
+
+```text
+sources/<édition>/<fichier>            fichiers du manifeste (PVC « sources »)
+sources/derives/{gpkg,relief,insee}/   dérivés, réutilisés d'une publication à l'autre
+tiles/<id>.partiel/                    publication en cours (PVC « tiles »)
+tiles/<id>/departements/D029/…         publication terminée, avec MANIFESTE (empreinte par département) et COMPLET
+```
+
+Chaque résultat est écrit à part puis renommé : un pod tué reprend où il en était ; une publication complète relancée sort aussitôt. Finistère seul : 351 s, 7,8 Go de mémoire (2 processus de 8 threads).
+
+Image `ghcr.io/labatailledefrance/beta1-datachain` (48 Mo), publiée et signée par la CI après fusion : base `dhi.io/static`, non root, système de fichiers en lecture seule possible ; HTTPS par rustls et les certificats racines embarqués.
 
 ## Licences
 
