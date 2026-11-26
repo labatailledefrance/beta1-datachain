@@ -33,7 +33,9 @@ jobs:
           persist-credentials: false
       - name: Chaîne Rust (rust-toolchain.toml)
         run: rustup toolchain install && rustup show active-toolchain
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Pas de cache de compilation : ce workflow publie l'image (zizmor,
+      # cache-poisoning). Le cache plus bas ne contient que des données,
+      # contrôlées par la comparaison d'empreinte.
       - name: Construction
         run: cargo build --release --locked --bins
       - name: Clé des entrées
