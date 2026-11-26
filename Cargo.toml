@@ -1,0 +1,31 @@
+[package]
+name = "beta1-datachain"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+license = "AGPL-3.0-or-later"
+description = "La Bataille de France, beta 1 : sources et chaîne de production des tiles."
+repository = "https://github.com/labatailledefrance/beta1-datachain"
+publish = false
+
+# Versions exactes, publiées depuis au moins deux semaines.
+[dependencies]
+# HTTP bloquant, TLS en Rust (rustls), sans décompression transparente : les
+# octets reçus sont ceux qu'on vérifie.
+ureq = { version = "=3.5.1", default-features = false, features = ["rustls"] }
+# L'IGN ne publie que des MD5 ; le SHA-256 est calculé par le projet.
+md-5 = "=0.11.0"
+sha2 = "=0.11.1"
+clap = { version = "=4.6.7", features = ["derive"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
