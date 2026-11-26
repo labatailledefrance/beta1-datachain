@@ -19,6 +19,8 @@ ureq = { version = "=3.5.1", default-features = false, features = ["rustls"] }
 md-5 = "=0.11.0"
 sha2 = "=0.11.1"
 clap = { version = "=4.6.7", features = ["derive"] }
+# Carreaux de 1 km de l'INSEE (Martinique, La Réunion), livrés en zip.
+zip = { version = "=9.5.1", default-features = false, features = ["deflate-flate2"] }
 
 # Chaîne (versions de P-26, vérifiées le 2026-11-16).
 # SQLite compilé depuis ses sources : un GeoPackage est une base SQLite.

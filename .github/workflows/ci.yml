@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*"]
 
 permissions: {}
 
@@ -32,7 +33,9 @@ jobs:
           persist-credentials: false
       - name: Chaîne Rust (rust-toolchain.toml)
         run: rustup toolchain install && rustup show active-toolchain
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Pas de cache de compilation : ce workflow publie l'image (zizmor,
+      # cache-poisoning). Le cache plus bas ne contient que des données,
+      # contrôlées par la comparaison d'empreinte.
       - name: Construction
         run: cargo build --release --locked --bins
       - name: Clé des entrées
@@ -73,3 +76,19 @@ jobs:
     uses: labatailledefrance/.github/.github/workflows/dco.yml@2a2b9d8e0fd4a253d281d83127b4f4f67c20880d # v2.0.0
     permissions:
       contents: read
+  # Image : seulement après fusion ou sur un tag (les PR de forks n'ont pas les
+  # secrets de dhi.io).
+  image:
+    if: github.event_name == 'push'
+    needs: [rust, securite, essai-brest]
+    uses: labatailledefrance/.github/.github/workflows/image.yml@2a2b9d8e0fd4a253d281d83127b4f4f67c20880d # v2.0.0
+    with:
+      name: beta1-datachain
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
