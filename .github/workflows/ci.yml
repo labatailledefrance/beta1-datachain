@@ -12,6 +12,51 @@ jobs:
     uses: labatailledefrance/.github/.github/workflows/rust.yml@2a2b9d8e0fd4a253d281d83127b4f4f67c20880d # v2.0.0
     permissions:
       contents: read
+  # Jeu d'essai de Brest : vraies sources du Finistère, 25 tiles, empreinte
+  # comparée à essais/brest.empreinte. Les entrées préparées (GeoPackage,
+  # relief réduit, national, carreaux) sont gardées en cache, clé = lignes du
+  # manifeste utilisées et script d'essai : l'IGN n'est sollicité qu'au
+  # changement d'édition.
+  essai-brest:
+    name: essai de Brest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+      # Hors de git (.gitignore).
+      ESSAI: essai-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Chaîne Rust (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Construction
+        run: cargo build --release --locked --bins
+      - name: Clé des entrées
+        id: cle
+        run: |
+          h=$( { grep -E '^(D029|FRANCE),' sources/manifeste.csv; sed -n '/^case/,/^  verifier)/p' essais/brest.sh; } | sha256sum | cut -c1-16)
+          echo "cle=essai-brest-$h" >> "$GITHUB_OUTPUT"
+      - name: Entrées en cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.ESSAI }}/entrees
+          key: ${{ steps.cle.outputs.cle }}
+      - name: Préparation (téléchargement, extraction, relief réduit)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: essais/brest.sh preparer "$ESSAI"
+      - name: Mise en cache des entrées
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.ESSAI }}/entrees
+          key: ${{ steps.cle.outputs.cle }}
+      - name: Production et comparaison de l'empreinte
+        run: essais/brest.sh verifier "$ESSAI"
   securite:
     uses: labatailledefrance/.github/.github/workflows/securite.yml@2a2b9d8e0fd4a253d281d83127b4f4f67c20880d # v2.0.0
     permissions:
