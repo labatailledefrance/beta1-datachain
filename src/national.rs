@@ -2,7 +2,7 @@
 //! toutes les BD TOPO. Chaque département en tire la même réponse à « à qui est
 //! cette tile ? » et « mer ou étranger ? ».
 
-use crate::erreur::{Contexte, Res, le};
+use crate::erreur::{Contexte, Erreur, Res, le};
 use crate::gpkg::{self, Geom, Ligne, Polygone};
 use crate::objets::{self, Commune};
 use rayon::prelude::*;
@@ -61,28 +61,28 @@ pub fn construire(sources: &[PathBuf], sortie: &Path) -> Res<()> {
     eprintln!("population {pop}");
     let mut e = crate::tuile::Ecrivain::default();
     let ligne = |e: &mut crate::tuile::Ecrivain, l: &Ligne| {
-        e.u(l.len() as u64);
+        e.varint(l.len() as u64);
         for p in l {
-            e.b.extend_from_slice(&p[0].to_le_bytes());
-            e.b.extend_from_slice(&p[1].to_le_bytes());
+            e.buf.extend_from_slice(&p[0].to_le_bytes());
+            e.buf.extend_from_slice(&p[1].to_le_bytes());
         }
     };
-    e.u(com.len() as u64);
+    e.varint(com.len() as u64);
     for (_, c) in com.values() {
-        e.s(&c.code);
-        e.s(&c.nom);
-        e.s(&c.dept);
-        e.u(c.population as u64);
-        e.u(c.polys.len() as u64);
+        e.string(&c.code);
+        e.string(&c.nom);
+        e.string(&c.dept);
+        e.varint(c.population as u64);
+        e.varint(c.polys.len() as u64);
         for p in &c.polys {
-            e.u(p.len() as u64);
+            e.varint(p.len() as u64);
             p.iter().for_each(|a| ligne(&mut e, a));
         }
     }
-    e.u(cotes.len() as u64);
+    e.varint(cotes.len() as u64);
     cotes.values().for_each(|l| ligne(&mut e, l));
-    let z = crate::zst(&e.b, 6)?;
-    let mut f = (e.b.len() as u64).to_le_bytes().to_vec();
+    let z = crate::zst(&e.buf, 6)?;
+    let mut f = (e.buf.len() as u64).to_le_bytes().to_vec();
     f.extend(z);
     std::fs::write(sortie, f).ctx(sortie.display())
 }
@@ -91,34 +91,30 @@ pub fn lire(p: &Path) -> Res<National> {
     let f = std::fs::read(p).ctx(p.display())?;
     let n = u64::from_le_bytes(le(&f, 0)?) as usize;
     let b = zstd::bulk::decompress(&f[8..], n).ctx(p.display())?;
-    let mut l = crate::tuile::LecteurV::new(&b);
-    fn ligne(l: &mut crate::tuile::LecteurV) -> Res<Ligne> {
-        let n = l.u() as usize;
-        (0..n)
-            .map(|_| {
-                let x = f64::from_le_bytes(le(l.b, l.p)?);
-                let y = f64::from_le_bytes(le(l.b, l.p + 8)?);
-                l.p += 16;
-                Ok([x, y, 0.0])
-            })
-            .collect()
+    let mut l = beta1_common::codec::Reader::new(&b);
+    let faux = |_| Erreur(format!("{} : référence nationale illisible", p.display()));
+    fn ligne(l: &mut beta1_common::codec::Reader) -> beta1_common::codec::Result<Ligne> {
+        let n = l.count()?;
+        (0..n).map(|_| Ok([f64::from_bits(l.u64()?), f64::from_bits(l.u64()?), 0.0])).collect()
     }
-    let nc = l.u() as usize;
+    let nc = l.count().map_err(faux)?;
     let communes = (0..nc)
-        .map(|_| -> Res<Commune> {
-            let (code, nom, dept) = (l.s(), l.s(), l.s());
-            let population = l.u() as u32;
-            let np = l.u() as usize;
+        .map(|_| -> beta1_common::codec::Result<Commune> {
+            let (code, nom, dept) = (l.string()?, l.string()?, l.string()?);
+            let population = l.varint()? as u32;
+            let np = l.count()?;
             let polys: Vec<Polygone> = (0..np)
                 .map(|_| {
-                    let na = l.u() as usize;
+                    let na = l.count()?;
                     (0..na).map(|_| ligne(&mut l)).collect()
                 })
-                .collect::<Res<_>>()?;
+                .collect::<beta1_common::codec::Result<_>>()?;
             Ok(Commune { code, nom, dept, population, polys })
         })
-        .collect::<Res<_>>()?;
-    let nl = l.u() as usize;
-    let cotes = (0..nl).map(|_| ligne(&mut l)).collect::<Res<_>>()?;
+        .collect::<beta1_common::codec::Result<_>>()
+        .map_err(faux)?;
+    let nl = l.count().map_err(faux)?;
+    let cotes = (0..nl).map(|_| ligne(&mut l)).collect::<beta1_common::codec::Result<_>>().map_err(faux)?;
+    l.finish().map_err(faux)?;
     Ok(National { communes, cotes })
 }

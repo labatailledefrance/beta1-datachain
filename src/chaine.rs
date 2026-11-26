@@ -75,15 +75,7 @@ impl Monde {
 
 /// Code INSEE en entier : « 50129 » → 50129 ; Corse « 2A004 » → 1 000 004,
 /// « 2B033 » → 1 100 033.
-pub fn code_num(c: &str) -> u32 {
-    if let Some(r) = c.strip_prefix("2A") {
-        1_000_000 + r.parse::<u32>().unwrap_or(0)
-    } else if let Some(r) = c.strip_prefix("2B") {
-        1_100_000 + r.parse::<u32>().unwrap_or(0)
-    } else {
-        c.parse().unwrap_or(0)
-    }
-}
+pub use beta1_common::tile::codes::commune_code as code_num;
 
 // ------------------------------------------------------------ 2. Inventaire
 
@@ -682,12 +674,10 @@ pub fn mairies(d: &Donnees, m: &Monde, r: &Repartition) -> BTreeMap<String, (u64
 
 // ------------------------------------------------------------ 6. Passe 1
 
-pub const OCC_EAU: u8 = 16;
-pub const OCC_ESTRAN: u8 = 32;
-pub const OCC_MER: u8 = 64;
-pub const OCC_SALEE: u8 = 128;
-/// Hors de France (gris, infranchissable) : quartet bas à 15.
-pub const OCC_ETRANGER: u8 = 15;
+pub use beta1_common::tile::codes::{
+    OCC_FOREIGN as OCC_ETRANGER, OCC_FORESHORE as OCC_ESTRAN, OCC_SALT as OCC_SALEE, OCC_SEA as OCC_MER,
+    OCC_WATER as OCC_EAU,
+};
 
 pub const ETAPES_TILE: &[&str] =
     &["bati", "franch", "communes", "occupation", "composantes", "encodage", "zone", "relief", "assemblage"];
@@ -713,32 +703,32 @@ pub struct P1 {
 }
 
 fn enc_poly(e: &mut Ecrivain, p: &Polygone, cx: f64, cy: f64) {
-    e.u(p.len() as u64);
+    e.varint(p.len() as u64);
     for a in p {
         // Anneau fermé en GeoPackage : le dernier point répète le premier.
         let n = if a.len() > 1 && a[0] == a[a.len() - 1] { a.len() - 1 } else { a.len() };
-        e.u(n as u64);
+        e.varint(n as u64);
         let (mut px, mut py) = (0i64, 0i64);
         for v in &a[..n] {
             let (x, y) = (q(v[0], cx), q(v[1], cy));
-            e.i(x - px);
-            e.i(y - py);
+            e.svarint(x - px);
+            e.svarint(y - py);
             (px, py) = (x, y);
         }
     }
 }
 
 fn enc_ligne(e: &mut Ecrivain, l: &[[f64; 3]], cx: f64, cy: f64, z: bool) {
-    e.u(l.len() as u64);
+    e.varint(l.len() as u64);
     let (mut px, mut py, mut pz) = (0i64, 0i64, 0i64);
     for v in l {
         let (x, y) = (q(v[0], cx), q(v[1], cy));
-        e.i(x - px);
-        e.i(y - py);
+        e.svarint(x - px);
+        e.svarint(y - py);
         (px, py) = (x, y);
         if z {
             let zz = (v[2] * 10.0).round() as i64;
-            e.i(zz - pz);
+            e.svarint(zz - pz);
             pz = zz;
         }
     }
@@ -746,22 +736,22 @@ fn enc_ligne(e: &mut Ecrivain, l: &[[f64; 3]], cx: f64, cy: f64, z: bool) {
 
 pub fn enc_geom(e: &mut Ecrivain, g: &Geom, cx: f64, cy: f64) {
     match g {
-        Geom::Vide => e.o(0),
+        Geom::Vide => e.u8(0),
         Geom::Point(p) => {
-            e.o(1);
-            e.i(q(p[0], cx));
-            e.i(q(p[1], cy));
+            e.u8(1);
+            e.svarint(q(p[0], cx));
+            e.svarint(q(p[1], cy));
         }
         Geom::Lignes(ls) => {
-            e.o(2);
-            e.u(ls.len() as u64);
+            e.u8(2);
+            e.varint(ls.len() as u64);
             for l in ls {
                 enc_ligne(e, l, cx, cy, false);
             }
         }
         Geom::Polygones(ps) => {
-            e.o(3);
-            e.u(ps.len() as u64);
+            e.u8(3);
+            e.varint(ps.len() as u64);
             for p in ps {
                 enc_poly(e, p, cx, cy);
             }
@@ -986,79 +976,79 @@ pub fn passe1(
         let mut e = Ecrivain::default();
         let mut rs: Vec<&Morceau> = r.routes[i].iter().collect();
         rs.sort_by_key(|m| (d.routes[m.src as usize].id, m.rang));
-        e.u(rs.len() as u64);
+        e.varint(rs.len() as u64);
         let mut pid = 0u64;
         for mo in &rs {
             let ro = &d.routes[mo.src as usize];
-            e.i(ro.id as i64 - pid as i64);
+            e.svarint(ro.id as i64 - pid as i64);
             pid = ro.id;
-            e.u(mo.rang as u64);
-            e.o(ro.nature);
-            e.o(ro.importance);
-            e.o(ro.pos_sol as u8);
-            e.u(ro.largeur_dm as u64);
-            e.o(ro.voies);
-            e.o(ro.sens);
-            e.o((ro.acces_vl & 0x3F) | (ro.fictif as u8) << 6 | (ro.urbain as u8) << 7);
-            e.o(ro.vitesse);
-            e.u(ro.poids_dt as u64);
-            e.u(ro.hauteur_dm as u64);
-            e.u(ro.largeur_r_dm as u64);
+            e.varint(mo.rang as u64);
+            e.u8(ro.nature);
+            e.u8(ro.importance);
+            e.u8(ro.pos_sol as u8);
+            e.varint(ro.largeur_dm as u64);
+            e.u8(ro.voies);
+            e.u8(ro.sens);
+            e.u8((ro.acces_vl & 0x3F) | (ro.fictif as u8) << 6 | (ro.urbain as u8) << 7);
+            e.u8(ro.vitesse);
+            e.varint(ro.poids_dt as u64);
+            e.varint(ro.hauteur_dm as u64);
+            e.varint(ro.largeur_r_dm as u64);
             enc_ligne(&mut e, &mo.pts, cx, cy, ro.pos_sol != 0);
         }
         let mut vs: Vec<&Morceau> = r.voies[i].iter().collect();
         vs.sort_by_key(|m| (d.voies[m.src as usize].id, m.rang));
-        e.u(vs.len() as u64);
+        e.varint(vs.len() as u64);
         let mut pid = 0u64;
         for mo in &vs {
             let v = &d.voies[mo.src as usize];
-            e.i(v.id as i64 - pid as i64);
+            e.svarint(v.id as i64 - pid as i64);
             pid = v.id;
-            e.u(mo.rang as u64);
-            e.o(v.nature);
-            e.o(v.pos_sol as u8);
-            e.o(v.electrifiee as u8);
-            e.o(v.voies);
+            e.varint(mo.rang as u64);
+            e.u8(v.nature);
+            e.u8(v.pos_sol as u8);
+            e.u8(v.electrifiee as u8);
+            e.u8(v.voies);
             enc_ligne(&mut e, &mo.pts, cx, cy, v.pos_sol != 0);
         }
         if !rs.is_empty() || !vs.is_empty() {
-            sections.push(tuile::compresser(Sec::Reseau, &e.b, p.niveau)?);
+            sections.push(tuile::compresser(Sec::Network, &e.buf, p.niveau)?);
         }
     }
     if !r.ponts[i].is_empty() {
         let mut e = Ecrivain::default();
         let mut ps: Vec<&Pont> = r.ponts[i].iter().collect();
         ps.sort_by_key(|p| p.id);
-        e.u(ps.len() as u64);
+        e.varint(ps.len() as u64);
         for po in ps {
-            e.u(po.id);
-            e.u((po.longueur * 10.0).round() as u64);
-            e.u(po.largeur_dm as u64);
-            e.o(po.importance);
-            e.o(po.nature_route);
-            e.u(po.poids_dt as u64);
-            e.o(po.franchit);
-            e.u(po.routes as u64);
-            e.u(po.voies as u64);
-            e.s(&po.toponyme);
-            e.u(po.portees.len() as u64);
+            e.varint(po.id);
+            e.varint((po.longueur * 10.0).round() as u64);
+            e.varint(po.largeur_dm as u64);
+            e.u8(po.importance);
+            e.u8(po.nature_route);
+            e.varint(po.poids_dt as u64);
+            e.u8(po.franchit);
+            e.varint(po.routes as u64);
+            e.varint(po.voies as u64);
+            e.string(&po.toponyme);
+            e.varint(po.portees.len() as u64);
             let mut pr = 0;
             for id in &po.portees {
-                e.u(id - pr);
+                e.varint(id - pr);
                 pr = *id;
             }
             enc_geom(&mut e, &po.geom, cx, cy);
         }
-        sections.push(tuile::compresser(Sec::Ponts, &e.b, p.niveau)?);
+        sections.push(tuile::compresser(Sec::Bridges, &e.buf, p.niveau)?);
     }
-    sections.push(tuile::compresser(Sec::Occup, &occ, p.niveau)?);
+    sections.push(tuile::compresser(Sec::Occupation, &occ, p.niveau)?);
     {
         let mut e = Ecrivain::default();
-        e.u(frag_l.len() as u64);
+        e.varint(frag_l.len() as u64);
         for (k, c) in frag_l.iter().enumerate() {
-            e.u(codes[*c as usize] as u64);
-            e.u(frag[c] as u64);
-            e.u(hab_frag[k] as u64);
+            e.varint(codes[*c as usize] as u64);
+            e.varint(frag[c] as u64);
+            e.varint(hab_frag[k] as u64);
         }
         if frag_l.len() > 1 {
             // Carte des fragments à 2 m (indice local, 255 = mer).
@@ -1068,25 +1058,25 @@ pub fn passe1(
                     |&c| if c == u16::MAX { 255 } else { frag_l.iter().position(|&f| f == c).map_or(255, |k| k as u8) },
                 )
                 .collect();
-            e.b.extend_from_slice(&carte);
+            e.buf.extend_from_slice(&carte);
         } else if frag_l.len() == 1 && cases_hors > 0 {
-            e.b.extend_from_slice(&mer.octets());
+            e.buf.extend_from_slice(&mer.octets());
         }
-        sections.push(tuile::compresser(Sec::Communes, &e.b, p.niveau)?);
+        sections.push(tuile::compresser(Sec::Communes, &e.buf, p.niveau)?);
     }
     let lieux: Vec<usize> = r.lieux[i].iter().map(|&k| k as usize).collect();
     if !lieux.is_empty() {
         let mut e = Ecrivain::default();
-        e.u(lieux.len() as u64);
+        e.varint(lieux.len() as u64);
         for k in lieux {
             let l = &d.lieux[k];
-            e.o(l.type_);
-            e.u(l.id);
-            e.s(&l.nom);
-            e.s(&l.detail);
+            e.u8(l.type_);
+            e.varint(l.id);
+            e.string(&l.nom);
+            e.string(&l.detail);
             enc_geom(&mut e, &l.geom, cx, cy);
         }
-        sections.push(tuile::compresser(Sec::Lieux, &e.b, p.niveau)?);
+        sections.push(tuile::compresser(Sec::Places, &e.buf, p.niveau)?);
     }
     chrono[5] = ms(t0);
     Ok(P1 {
@@ -1255,7 +1245,7 @@ fn enc_bati(t: TileId, i: usize, d: &Donnees, r: &Repartition, g: &portes::Grill
     let mut bats: Vec<&Batiment> = r.bat_p[i].iter().map(|&k| &d.batiments[k as usize]).collect();
     bats.sort_by_key(|b| b.id);
     let mut e = Ecrivain::default();
-    e.u(bats.len() as u64);
+    e.varint(bats.len() as u64);
     let mut pid = 0u64;
     for b in &bats {
         let (polys, net) = emprise::quantifier(&b.polys, cx, cy);
@@ -1268,12 +1258,12 @@ fn enc_bati(t: TileId, i: usize, d: &Donnees, r: &Repartition, g: &portes::Grill
         }
         st.toit += b.toit_dm.is_some() as u32;
         st.materiaux += b.materiaux.is_some() as u32;
-        e.u(b.id - pid);
+        e.varint(b.id - pid);
         pid = b.id;
-        e.o(b.nature);
-        e.o(b.usage1);
-        e.o(b.usage2);
-        e.o(b.leger as u8
+        e.u8(b.nature);
+        e.u8(b.usage1);
+        e.u8(b.usage2);
+        e.u8(b.leger as u8
             | (b.hauteur_dm.is_some() as u8) << 1
             | (b.etages.is_some() as u8) << 2
             | (b.logements.is_some() as u8) << 3
@@ -1281,31 +1271,31 @@ fn enc_bati(t: TileId, i: usize, d: &Donnees, r: &Repartition, g: &portes::Grill
             | (b.materiaux.is_some() as u8) << 5
             | (porte.is_some() as u8) << 6);
         for v in [b.hauteur_dm, b.etages, b.logements, b.toit_dm].into_iter().flatten() {
-            e.u(v as u64);
+            e.varint(v as u64);
         }
         if let Some((m, to)) = b.materiaux {
-            e.o(m);
-            e.o(to);
+            e.u8(m);
+            e.u8(to);
         }
         if let Some((a, s, _)) = porte {
-            e.u(a as u64);
-            e.u(s as u64);
+            e.varint(a as u64);
+            e.varint(s as u64);
         }
-        e.u(polys.len() as u64);
+        e.varint(polys.len() as u64);
         for poly in &polys {
-            e.u(poly.len() as u64);
+            e.varint(poly.len() as u64);
             for a in poly {
-                e.u(a.len() as u64);
+                e.varint(a.len() as u64);
                 let (mut px, mut py) = (0i64, 0i64);
                 for v in a {
-                    e.i(v[0] - px);
-                    e.i(v[1] - py);
+                    e.svarint(v[0] - px);
+                    e.svarint(v[1] - py);
                     (px, py) = (v[0], v[1]);
                 }
             }
         }
     }
-    (e.b, st)
+    (e.buf, st)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1325,18 +1315,18 @@ pub fn passe2(
     let (x, z) = (&p1[i], &z2[i]);
     let mut sections = sections;
     let mut e = Ecrivain::default();
-    e.o(!z.exclus.vide() as u8);
+    e.u8(!z.exclus.vide() as u8);
     if !z.exclus.vide() {
-        e.b.extend_from_slice(&z.exclus.octets());
+        e.buf.extend_from_slice(&z.exclus.octets());
     }
-    e.u(z.cases.len() as u64);
+    e.varint(z.cases.len() as u64);
     let mut pk = 0u32;
     for &k in &z.cases {
-        e.u((k - pk) as u64);
+        e.varint((k - pk) as u64);
         pk = k;
     }
-    sections.push(tuile::compresser(Sec::Zone, &e.b, p.niveau)?);
-    sections.push(tuile::compresser(Sec::Franch, &z.franch.octets(), p.niveau)?);
+    sections.push(tuile::compresser(Sec::Zone, &e.buf, p.niveau)?);
+    sections.push(tuile::compresser(Sec::Passable, &z.franch.octets(), p.niveau)?);
     let mut bati = StatBati::default();
     if x.nb_bat > 0 {
         let v: [Option<portes::Vue>; 9] = std::array::from_fn(|k| {
@@ -1345,7 +1335,7 @@ pub fn passe2(
         });
         let (b, st) = enc_bati(t, i, d, r, &portes::grille(&v));
         bati = st;
-        sections.push(tuile::compresser(Sec::Bati, &b, p.niveau)?);
+        sections.push(tuile::compresser(Sec::Buildings, &b, p.niveau)?);
     }
     let ms_zone = ms(t0) + z.ms;
 
@@ -1364,26 +1354,26 @@ pub fn passe2(
         flags |= 4 | b.stat.source() << 4;
         let m2 = 501usize * 501;
         let brut = |z: &[u8], max: usize| zstd::bulk::decompress(z, max).map(|v| v.len()).ctx("relief : décompression");
-        sections.push(Section { sec: Sec::Relief, brut: brut(&b.base, 16 + 7 * m2)?, donnees: b.base.clone() });
+        sections.push(Section { id: Sec::Relief, raw_len: brut(&b.base, 16 + 7 * m2)?, data: b.base.clone() });
         if let Some(f) = &b.fin {
-            sections.push(Section { sec: Sec::Relief1m, brut: brut(f, 2 + 2 * 1001 * 1001)?, donnees: f.clone() });
+            sections.push(Section { id: Sec::Relief1m, raw_len: brut(f, 2 + 2 * 1001 * 1001)?, data: f.clone() });
         }
     }
     let ms_rel = ms(t0);
 
     let t0 = Instant::now();
-    sections.sort_by_key(|s| s.sec);
+    sections.sort_by_key(|s| s.id);
     let ent = Entete {
         ix: t.ix,
         iy: t.iy,
         zone: p.zone,
         flags,
-        part_bati: (x.part_bati * 65535.0).round() as u16,
-        habitants: x.habitants,
-        nb_bat: x.nb_bat,
+        built_share: (x.part_bati * 65535.0).round() as u16,
+        inhabitants: x.habitants,
+        buildings: x.nb_bat,
     };
     let octets = tuile::assembler(&ent, &sections);
-    let tailles = sections.iter().map(|s| (s.sec, s.brut, s.donnees.len())).collect();
+    let tailles = sections.iter().map(|s| (s.id, s.raw_len, s.data.len())).collect();
     let ms_ass = ms(t0);
     Ok(Sortie {
         octets,
@@ -1634,7 +1624,7 @@ pub fn executer(p: &Params) -> Res<()> {
     let mut st_mairies = [0usize; 3];
     let mut blob = Ecrivain::default();
     let communes_dept: Vec<&objets::Commune> = d.communes.iter().filter(|c| c.dept == p.dept).collect();
-    blob.u(communes_dept.len() as u64);
+    blob.varint(communes_dept.len() as u64);
     for c in &communes_dept {
         let cn = code_num(&c.code);
         let voisines: Vec<u32> = adj
@@ -1675,15 +1665,15 @@ pub fn executer(p: &Params) -> Res<()> {
             bat,
             voisines.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" ")
         )?;
-        blob.u(cn as u64);
-        blob.s(&c.nom);
-        blob.u(bat);
-        blob.u(voisines.len() as u64);
+        blob.varint(cn as u64);
+        blob.string(&c.nom);
+        blob.varint(bat);
+        blob.varint(voisines.len() as u64);
         for v in voisines {
-            blob.u(v as u64);
+            blob.varint(v as u64);
         }
     }
-    let communes_bin = crate::zst(&blob.b, p.niveau)?;
+    let communes_bin = crate::zst(&blob.buf, p.niveau)?;
     std::fs::write(p.sortie.join("communes.bin"), &communes_bin)?;
     h.update(&communes_bin);
     let empreinte = h.finalize();
@@ -1702,7 +1692,7 @@ pub fn executer(p: &Params) -> Res<()> {
 
     // tiles.csv
     let mut ft = std::fs::File::create(p.sortie.join("tiles.csv"))?;
-    let noms: Vec<&str> = tuile::SECTIONS.iter().map(|s| s.1).collect();
+    let noms: Vec<&str> = Sec::ALL.iter().map(|s| s.name()).collect();
     write!(
         ft,
         "ix,iy,type,terre,mer,part_bati,nb_bat,habitants,fragments,dist_cote_km,murs_cases,cours,cours_percees,cases_exclues,cases_passages,cases_zone,octets"
@@ -1740,8 +1730,8 @@ pub fn executer(p: &Params) -> Res<()> {
             s.cases_zone,
             s.octets.len()
         )?;
-        for (sec, _) in tuile::SECTIONS {
-            let v = s.tailles.iter().find(|x| x.0 == *sec);
+        for sec in Sec::ALL {
+            let v = s.tailles.iter().find(|x| x.0 == sec);
             write!(ft, ",{},{}", v.map_or(0, |v| v.1), v.map_or(0, |v| v.2))?;
         }
         let rs = 0.0;

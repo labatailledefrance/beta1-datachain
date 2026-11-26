@@ -27,7 +27,14 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SANS: i32 = i32::MIN;
+pub use beta1_common::tile::relief::NONE as SANS;
+/// Grille de nœuds : celle du format des tiles (`beta1_common::tile::relief`).
+pub use beta1_common::tile::relief::{Nodes as Noeuds, encode as encoder, encode_two as encoder_deux};
+
+/// Décode une grille encodée par [`encoder`].
+pub fn decoder(b: &[u8], pas: usize) -> Res<Noeuds> {
+    Ok(beta1_common::tile::relief::decode(b, pas)?)
+}
 
 /// Une dalle décodée : altitudes en cm, ligne 0 au nord.
 pub struct Dalle {
@@ -168,26 +175,6 @@ pub fn parcourir_7z(chemin: &Path, f: impl Fn(Dalle) -> Res<()> + Sync) -> Res<(
 /// Grille de nœuds d'une tile au pas `r` : (n+1)² valeurs en cm (ou SANS),
 /// ligne j = 0 au **sud** (y = y0), comme les autres couches.
 #[derive(Clone)]
-pub struct Noeuds {
-    pub r: usize,
-    pub m: usize, // n + 1
-    pub cm: Vec<i32>,
-}
-
-impl Noeuds {
-    pub fn new(r: usize) -> Noeuds {
-        let m = 1000 / r + 1;
-        Noeuds { r, m, cm: vec![SANS; m * m] }
-    }
-    #[inline]
-    pub fn get(&self, i: usize, j: usize) -> i32 {
-        self.cm[j * self.m + i]
-    }
-}
-
-/// Ce qu'une dalle de 1 km laisse pour finir les tiles voisines : sa colonne
-/// ouest (x = x0, pour la tile ouest) et sa ligne nord (y = y0 + 1000, pour
-/// la tile nord), au pas r.
 pub struct Bords {
     pub ouest: Vec<i32>, // j = 0..=n, valeurs y0 + j·r (j = 0 inconnu : SANS)
     pub nord: Vec<i32>,  // i = 0..=n
@@ -197,7 +184,7 @@ pub struct Bords {
 /// manquants), et ses bords à exporter.
 pub fn noeuds_de_dalle(d: &Dalle, x0: i64, y0: i64, r: usize) -> (Noeuds, Bords) {
     let mut g = Noeuds::new(r);
-    let m = g.m;
+    let m = g.side;
     let ri = r as i64;
     for j in 0..m {
         for i in 0..m {
@@ -215,7 +202,7 @@ pub fn noeuds_de_dalle(d: &Dalle, x0: i64, y0: i64, r: usize) -> (Noeuds, Bords)
 /// voisines : est (ix+1, iy) → colonne ouest ; sud (ix, iy-1) → ligne nord ;
 /// coin sud-est (ix+1, iy-1) → premier nœud de sa ligne nord.
 pub fn completer(g: &mut Noeuds, est: Option<&Bords>, sud: Option<&Bords>, sud_est: Option<&Bords>) {
-    let m = g.m;
+    let m = g.side;
     if let Some(b) = est {
         for j in 1..m {
             g.cm[j * m + m - 1] = b.ouest[j];
@@ -231,134 +218,11 @@ pub fn completer(g: &mut Noeuds, est: Option<&Bords>, sud: Option<&Bords>, sud_e
     }
 }
 
-/// Encode une grille : quantification au pas `q` cm, MED, zigzag, deux plans.
-/// Renvoie (octets bruts avant zstd, bitmap des nœuds sans donnée).
-pub fn encoder(g: &Noeuds, q: i32) -> Vec<u8> {
-    let m = g.m;
-    let qv: Vec<i32> = g.cm.iter().map(|&v| if v == SANS { SANS } else { div_arrondi(v, q) }).collect();
-    let mut sans = vec![0u8; (m * m).div_ceil(8)];
-    let mut rec = vec![0i32; m * m];
-    let mut bas = Vec::with_capacity(m * m);
-    let mut haut = Vec::with_capacity(m * m);
-    let mut esc: Vec<u8> = Vec::new();
-    for j in 0..m {
-        for i in 0..m {
-            let k = j * m + i;
-            let a = if i > 0 {
-                rec[k - 1]
-            } else if j > 0 {
-                rec[k - m]
-            } else {
-                0
-            };
-            let b = if j > 0 { rec[k - m] } else { a };
-            let c = if i > 0 && j > 0 { rec[k - m - 1] } else { b };
-            let pred = med(a, b, c);
-            let v = qv[k];
-            let v = if v == SANS {
-                sans[k >> 3] |= 1 << (k & 7);
-                pred
-            } else {
-                v
-            };
-            rec[k] = v;
-            let res = v.wrapping_sub(pred);
-            let z = ((res << 1) ^ (res >> 31)) as u32;
-            if z < 0xFFFF {
-                bas.push(z as u8);
-                haut.push((z >> 8) as u8);
-            } else {
-                bas.push(0xFF);
-                haut.push(0xFF);
-                esc.extend_from_slice(&z.to_le_bytes());
-            }
-        }
-    }
-    let mut out = Vec::with_capacity(16 + sans.len() + 2 * m * m + esc.len());
-    out.extend_from_slice(&(m as u16).to_le_bytes());
-    out.extend_from_slice(&(q as u16).to_le_bytes());
-    out.extend_from_slice(&(esc.len() as u32).to_le_bytes());
-    let tous_sans = sans.iter().all(|&b| b == 0xFF) || g.cm.iter().all(|&v| v == SANS);
-    out.push(tous_sans as u8);
-    if !tous_sans {
-        out.extend_from_slice(&sans);
-        out.extend_from_slice(&bas);
-        out.extend_from_slice(&haut);
-        out.extend_from_slice(&esc);
-    }
-    out
-}
-
-/// Décode une grille encodée : altitudes quantifiées (× q cm), SANS hors
-/// données.
-pub fn decoder(b: &[u8], r: usize) -> Noeuds {
-    let m = u16::from_le_bytes([b[0], b[1]]) as usize;
-    let q = u16::from_le_bytes([b[2], b[3]]) as i32;
-    let ne = u32::from_le_bytes([b[4], b[5], b[6], b[7]]) as usize;
-    let mut g = Noeuds { r, m, cm: vec![SANS; m * m] };
-    if b[8] == 1 {
-        return g;
-    }
-    let ns = (m * m).div_ceil(8);
-    let sans = &b[9..9 + ns];
-    let bas = &b[9 + ns..9 + ns + m * m];
-    let haut = &b[9 + ns + m * m..9 + ns + 2 * m * m];
-    let esc = &b[9 + ns + 2 * m * m..9 + ns + 2 * m * m + ne];
-    let mut ke = 0;
-    let mut rec = vec![0i32; m * m];
-    for j in 0..m {
-        for i in 0..m {
-            let k = j * m + i;
-            let a = if i > 0 {
-                rec[k - 1]
-            } else if j > 0 {
-                rec[k - m]
-            } else {
-                0
-            };
-            let bb = if j > 0 { rec[k - m] } else { a };
-            let c = if i > 0 && j > 0 { rec[k - m - 1] } else { bb };
-            let pred = med(a, bb, c);
-            let mut z = bas[k] as u32 | (haut[k] as u32) << 8;
-            if z == 0xFFFF {
-                z = u32::from_le_bytes([esc[ke], esc[ke + 1], esc[ke + 2], esc[ke + 3]]);
-                ke += 4;
-            }
-            let res = ((z >> 1) as i32) ^ -((z & 1) as i32);
-            let v = pred.wrapping_add(res);
-            rec[k] = v;
-            if sans[k >> 3] >> (k & 7) & 1 == 0 {
-                g.cm[k] = v * q;
-            }
-        }
-    }
-    g
-}
-
-#[inline]
-fn med(a: i32, b: i32, c: i32) -> i32 {
-    if c >= a.max(b) {
-        a.min(b)
-    } else if c <= a.min(b) {
-        a.max(b)
-    } else {
-        a + b - c
-    }
-}
-
-#[inline]
-fn div_arrondi(v: i32, q: i32) -> i32 {
-    if q == 1 {
-        return v;
-    }
-    if v >= 0 { (v + q / 2) / q } else { -((-v + q / 2) / q) }
-}
-
 /// Erreur d'une grille au pas r (interpolation bilinéaire) par rapport aux
 /// nœuds de 1 m de la même tile : (somme des carrés en cm², max en cm,
 /// nombre de points). Seuls les points dont les quatre nœuds existent.
 pub fn erreur(fine: &Noeuds, g: &Noeuds) -> (f64, i64, u64, Vec<u32>) {
-    let r = g.r;
+    let r = g.step;
     let (mut s2, mut mx, mut n) = (0f64, 0i64, 0u64);
     let mut hist = vec![0u32; 64]; // par tranches de 5 cm
     for y in 0..1000usize {
@@ -388,7 +252,7 @@ pub fn erreur(fine: &Noeuds, g: &Noeuds) -> (f64, i64, u64, Vec<u32>) {
 /// tile : valeur du pixel natif au même point (les centres coïncident).
 pub fn noeuds_natifs_5m(dalles: &HashMap<(i64, i64), Dalle>, x0: i64, y0: i64) -> Noeuds {
     let mut g = Noeuds::new(5);
-    let m = g.m;
+    let m = g.side;
     for j in 0..m {
         for i in 0..m {
             let (x, y) = (x0 + 5 * i as i64, y0 + 5 * j as i64);
@@ -464,84 +328,6 @@ impl Seek for Volumes {
         self.pos = p as u64;
         Ok(self.pos)
     }
-}
-
-// ------------------------------------------------------ Relief en deux couches
-
-/// Nœuds impairs prédits depuis la base de 2 m (quantifiée) : moyenne des deux
-/// ou quatre voisins.
-fn predire(b: &Noeuds, i: usize, j: usize, q: i32) -> Option<i32> {
-    let g = |i: usize, j: usize| {
-        let v = b.get(i, j);
-        (v != SANS).then_some(v / q)
-    };
-    let (a, c) = (i / 2, j / 2);
-    let v: Vec<i32> = match (i % 2, j % 2) {
-        (1, 0) => vec![g(a, c)?, g(a + 1, c)?],
-        (0, 1) => vec![g(a, c)?, g(a, c + 1)?],
-        _ => vec![g(a, c)?, g(a + 1, c)?, g(a, c + 1)?, g(a + 1, c + 1)?],
-    };
-    Some(div_arrondi(v.iter().sum::<i32>(), v.len() as i32))
-}
-
-/// Base de 2 m (même format que P-07) et complément de 1 m. `g` : 1001 × 1001.
-pub fn encoder_deux(g: &Noeuds, q: i32) -> (Vec<u8>, Vec<u8>) {
-    assert_eq!(g.r, 1);
-    let mut b = Noeuds::new(2);
-    for j in 0..b.m {
-        for i in 0..b.m {
-            b.cm[j * b.m + i] = g.get(2 * i, 2 * j);
-        }
-    }
-    let base = encoder(&b, q);
-    let b = decoder(&base, 2);
-    // Résidus (zigzag, 16 bits) par plan d'octets ; 0xFFFF : pas de donnée.
-    let (mut bas, mut haut) = (Vec::new(), Vec::new());
-    for j in 0..g.m {
-        for i in 0..g.m {
-            if i % 2 == 0 && j % 2 == 0 {
-                continue;
-            }
-            let v = g.get(i, j);
-            let z = if v == SANS {
-                0xFFFF
-            } else {
-                let r = div_arrondi(v, q) - predire(&b, i, j, q).unwrap_or(0);
-                (((r << 1) ^ (r >> 31)) as u32).min(0xFFFE)
-            };
-            bas.push(z as u8);
-            haut.push((z >> 8) as u8);
-        }
-    }
-    let mut out = (q as u16).to_le_bytes().to_vec();
-    out.append(&mut bas);
-    out.append(&mut haut);
-    (base, out)
-}
-
-/// Inverse d'`encoder_deux`.
-pub fn decoder_deux(base: &[u8], fin: &[u8]) -> Noeuds {
-    let b = decoder(base, 2);
-    let q = u16::from_le_bytes([fin[0], fin[1]]) as i32;
-    let n = (fin.len() - 2) / 2;
-    let mut g = Noeuds::new(1);
-    let mut k = 0;
-    for j in 0..g.m {
-        for i in 0..g.m {
-            g.cm[j * g.m + i] = if i % 2 == 0 && j % 2 == 0 {
-                b.get(i / 2, j / 2)
-            } else {
-                let z = fin[2 + k] as u32 | (fin[2 + n + k] as u32) << 8;
-                k += 1;
-                if z == 0xFFFF {
-                    SANS
-                } else {
-                    (predire(&b, i, j, q).unwrap_or(0) + (((z >> 1) as i32) ^ -((z & 1) as i32))) * q
-                }
-            };
-        }
-    }
-    g
 }
 
 /// Extrait le premier `.gpkg` d'une archive.

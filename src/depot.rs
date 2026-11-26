@@ -46,7 +46,7 @@ pub fn empaqueter(archives: &[PathBuf], sortie: &Path, boite: Option<[i64; 4]>) 
             if dehors || d.cm.iter().all(|v| *v == SANS) {
                 return Ok(());
             }
-            let g = Noeuds { r: d.pas as usize, m: d.n, cm: d.cm };
+            let g = Noeuds { step: d.pas as usize, side: d.n, cm: d.cm };
             let z = crate::zst(&relief::encoder(&g, 1), 3)?;
             let mut w = f.lock().ctx("verrou empoisonné")?;
             let off = w.1;
@@ -114,7 +114,7 @@ impl Paquet {
         self.fic.read_exact_at(&mut b, r.off).ctx(&self.nom)?;
         let brut = zstd::bulk::decompress(&b, 16 + 3 * r.n * r.n + r.n * r.n * 4)
             .ctx(format!("{} : dalle {c:?}", self.nom))?;
-        Ok(Dalle { x_no: c.0, y_no: c.1, pas: r.pas, n: r.n, cm: relief::decoder(&brut, r.pas as usize).cm })
+        Ok(Dalle { x_no: c.0, y_no: c.1, pas: r.pas, n: r.n, cm: relief::decoder(&brut, r.pas as usize)?.cm })
     }
 }
 

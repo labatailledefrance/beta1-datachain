@@ -10,6 +10,8 @@ publish = false
 
 # Versions exactes, publiées depuis au moins deux semaines.
 [dependencies]
+# Format des tiles, partagé avec le serveur et le client (même tag partout).
+beta1-common = { version = "=0.3.0", git = "https://github.com/labatailledefrance/beta1-common", tag = "v0.3.0" }
 # HTTP bloquant, TLS en Rust (rustls), sans décompression transparente : les
 # octets reçus sont ceux qu'on vérifie.
 ureq = { version = "=3.5.1", default-features = false, features = ["rustls"] }
@@ -42,3 +44,4 @@ expect_used = "deny"
 [profile.release]
 lto = "thin"
 codegen-units = 16
+

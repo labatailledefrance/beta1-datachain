@@ -8,71 +8,11 @@ use crate::erreur::Res;
 use crate::gpkg::{self, Geom, Ligne, Objet, Polygone, Val};
 use std::path::Path;
 
-pub const INCONNU: u8 = 255;
-
-pub fn code(listes: &[&str], v: &str) -> u8 {
-    listes.iter().position(|x| *x == v).map(|p| p as u8).unwrap_or(if v.is_empty() { 254 } else { INCONNU })
-}
-
-pub const USAGES: &[&str] = &[
-    "Résidentiel",
-    "Indifférencié",
-    "Annexe",
-    "Commercial et services",
-    "Industriel",
-    "Sportif",
-    "Religieux",
-    "Agricole",
-];
-pub const NATURES_BAT: &[&str] = &[
-    "Indifférenciée",
-    "Industriel, agricole ou commercial",
-    "Eglise",
-    "Chapelle",
-    "Monument",
-    "Serre",
-    "Silo",
-    "Château",
-    "Tour, donjon",
-    "Tribune",
-    "Moulin à vent",
-    "Fort, blockhaus, casemate",
-    "Arc de triomphe",
-    "Arène ou théâtre antique",
-    "Phare",
-];
-pub const NATURES_ROUTE: &[&str] = &[
-    "Type autoroutier",
-    "Route à 2 chaussées",
-    "Route à 1 chaussée",
-    "Bretelle",
-    "Rond-point",
-    "Route empierrée",
-    "Chemin",
-    "Sentier",
-    "Escalier",
-    "Bac ou liaison maritime",
-    "Piste cyclable",
-    "Bac ou liaison fluviale",
-];
-pub const SENS: &[&str] = &["Double sens", "Sens direct", "Sens inverse", "Sans objet"];
-pub const ACCES_VL: &[&str] =
-    &["Libre", "A péage", "Restreint aux ayants droit", "Physiquement impossible", "Saisonnier"];
-/// Classes de végétation (1 à 10 dans la couche d'occupation) ; 5 = haie.
-pub const VEGETATION: &[&str] = &[
-    "",
-    "Forêt fermée de feuillus",
-    "Forêt fermée de conifères",
-    "Forêt fermée mixte",
-    "Bois",
-    "Haie",
-    "Lande ligneuse",
-    "Verger",
-    "Vigne",
-    "Peupleraie",
-    "Forêt ouverte",
-];
-pub const CLASSES_LARGEUR: &[&str] = &["Entre 0 et 15 m", "Entre 15 et 50 m", "Plus de 50 m", "Sans objet"];
+// Codes des énumérations : ceux du format des tiles (ordre figé).
+pub use beta1_common::tile::codes::{
+    BUILDING_NATURES as NATURES_BAT, DIRECTIONS as SENS, LIGHT_VEHICLE_ACCESS as ACCES_VL, PLACE_KINDS as TYPES_LIEUX,
+    ROAD_NATURES as NATURES_ROUTE, UNKNOWN as INCONNU, USAGES, VEGETATION, WATERCOURSE_WIDTHS as CLASSES_LARGEUR, code,
+};
 
 pub struct Batiment {
     pub id: u64,
@@ -169,21 +109,6 @@ pub struct Lieu {
     pub geom: Geom,
     pub insee: String,
 }
-
-pub const TYPES_LIEUX: &[&str] = &[
-    "Mairie",
-    "Centrale électrique (CNPE)",
-    "Usine de retraitement",
-    "Port",
-    "Gare",
-    "Gare maritime",
-    "Aérodrome",
-    "Piste",
-    "Barrage",
-    "Enceinte militaire",
-    "Centrale éolienne",
-    "Écluse",
-];
 
 pub struct Donnees {
     pub batiments: Vec<Batiment>,
