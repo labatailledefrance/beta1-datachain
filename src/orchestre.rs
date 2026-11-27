@@ -11,7 +11,7 @@
 //!   derives/insee/carreaux_1km_<mart|reun>.csv
 //! tiles/                         PVC « tiles »
 //!   <publication>.partiel/       en cours : national/, departements/, journaux/
-//!   <publication>/               terminée : departements/D029/…, MANIFESTE, COMPLET
+//!   <publication>/               terminée : departements/D029/…, graphe.bin, MANIFESTE, COMPLET
 //! ```
 //!
 //! Chaque résultat est écrit à part puis renommé : un résultat présent est

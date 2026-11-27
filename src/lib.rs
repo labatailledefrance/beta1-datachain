@@ -8,6 +8,8 @@
 //!   relief du RGE ALTI ([`relief`], [`depot`]), référence nationale des
 //!   communes et des côtes ([`national`]), production d'un département
 //!   ([`chaine`]) et contrôle des raccords entre départements ([`controle`]).
+//! - Après les départements : graphe routier national, ordre CCH compris
+//!   ([`graphe`]).
 
 pub mod empreinte;
 pub mod erreur;
@@ -21,6 +23,7 @@ pub mod depot;
 pub mod emprise;
 pub mod geo;
 pub mod gpkg;
+pub mod graphe;
 pub mod mesure;
 pub mod national;
 pub mod objets;

@@ -8,7 +8,8 @@ Chaîne de données de la beta 1 de **La Bataille de France** : elle transforme 
 |---|---|
 | Manifeste des sources et téléchargement | fait |
 | Chaîne (un processus par département), jeu d'essai de Brest en CI | fait |
-| Graphe routier national (CCH), pyramide de la carte | à porter |
+| Graphe routier national (ordre CCH) | fait |
+| Pyramide de la carte | à porter |
 | Publication adressée par ses entrées (manifeste + digest de l'image), binaire `datachain`, image signée | fait |
 | Job du chart `game` (PVC `sources` et `tiles`, [H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) | à faire |
 
@@ -48,13 +49,18 @@ target/release/chaine national --source D029.gpkg … --sortie national-z0.bin  
 target/release/chaine departement --gpkg D029.gpkg --dept 29 --zone 0 \
   --national national-z0.bin --relief relief --insee200 carreaux-200m.parquet --sortie tiles-D029
 target/release/chaine controle tiles-D029                                         # décodage, doublons, raccords
+target/release/chaine graphe --sortie graphe.bin tiles-D029 …                     # graphe routier, ordre CCH
 ```
+
+### Graphe routier national
+
+`chaine graphe` lit les routes carrossables et les ponts de toutes les tiles des départements donnés, recoud les tronçons coupés aux bords des tiles et des départements, associe les ponts (charge limite par heuristique, [B-03](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#b-03--charge-limite-des-ponts)), puis calcule l'ordre CCH (dissection imbriquée par flot inertiel, crate `cch`, [A-07](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#a-07--recherche-de-chemin)). Sortie : `graphe.bin`, au format de [beta1-common](https://github.com/labatailledefrance/beta1-common) `graph`, relu avant d'être écrit. Finistère : 246 661 nœuds, 294 574 arêtes, 15,3 Mo, 8 s ; mêmes octets que P-26, à 1 comme à 16 threads.
 
 Le relief vient du RGE ALTI 1 m seul, le 5 m en secours ([B-01](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#b-01--chaîne-de-traitement-des-données-ign)).
 
 ### Jeu d'essai de Brest
 
-[`essais/brest.sh`](essais/brest.sh) produit 25 tiles autour de Brest depuis les vraies sources du Finistère et compare leur empreinte à [`essais/brest.empreinte`](essais/brest.empreinte). La CI le lance à chaque PR ; les entrées préparées (3,2 Go) sont en cache, l'IGN n'est sollicité qu'au changement d'édition. Une modification voulue de la sortie met à jour l'empreinte dans la même PR.
+[`essais/brest.sh`](essais/brest.sh) produit 25 tiles autour de Brest depuis les vraies sources du Finistère et compare leur empreinte à [`essais/brest.empreinte`](essais/brest.empreinte), puis celle de leur graphe routier à [`essais/brest-graphe.empreinte`](essais/brest-graphe.empreinte). La CI le lance à chaque PR ; les entrées préparées (3,2 Go) sont en cache, l'IGN n'est sollicité qu'au changement d'édition. Une modification voulue de la sortie met à jour l'empreinte dans la même PR.
 
 ```sh
 essais/brest.sh preparer /tmp/essai   # ~5 Go téléchargés, 3 min
@@ -63,7 +69,7 @@ essais/brest.sh verifier /tmp/essai   # 12 s, 2,8 Go de mémoire
 
 ## Publication complète : `datachain`
 
-Ce que lance le Job du chart `game` ([H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) : sources (téléchargement avec reprise), dérivés (GeoPackage, paquets de relief, carreaux de 1 km), référence nationale par zone, un processus `chaine` par département, contrôle croisé (raccords entre départements), puis publication. Le manifeste est **compilé dans le binaire** : le digest de l'image fixe les sources.
+Ce que lance le Job du chart `game` ([H-06](https://github.com/labatailledefrance/documentation/blob/main/OPEN-PROBLEMS.md#h-06--diffusion-des-tiles)) : sources (téléchargement avec reprise), dérivés (GeoPackage, paquets de relief, carreaux de 1 km), référence nationale par zone, un processus `chaine` par département, contrôle croisé (raccords entre départements), graphe routier national, puis publication. Le manifeste est **compilé dans le binaire** : le digest de l'image fixe les sources.
 
 ```sh
 datachain --sources /donnees/sources --tiles /donnees/tiles --publication <id> [--zones D029,D974] [--processus 2 --threads 8]
@@ -73,7 +79,7 @@ datachain --sources /donnees/sources --tiles /donnees/tiles --publication <id> [
 sources/<édition>/<fichier>            fichiers du manifeste (PVC « sources »)
 sources/derives/{gpkg,relief,insee}/   dérivés, réutilisés d'une publication à l'autre
 tiles/<id>.partiel/                    publication en cours (PVC « tiles »)
-tiles/<id>/departements/D029/…         publication terminée, avec MANIFESTE (empreinte par département) et COMPLET
+tiles/<id>/departements/D029/…         publication terminée, avec graphe.bin, MANIFESTE (empreinte par département et du graphe) et COMPLET
 ```
 
 Chaque résultat est écrit à part puis renommé : un pod tué reprend où il en était ; une publication complète relancée sort aussitôt. Finistère seul : 351 s, 7,8 Go de mémoire (2 processus de 8 threads).
