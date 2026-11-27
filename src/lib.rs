@@ -26,6 +26,7 @@ pub mod gpkg;
 pub mod graphe;
 pub mod mesure;
 pub mod national;
+pub mod nettoyage;
 pub mod objets;
 pub mod orchestre;
 pub mod population;

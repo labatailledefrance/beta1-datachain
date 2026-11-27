@@ -16,6 +16,7 @@ use std::time::Instant;
 
 use beta1_datachain::erreur::{Contexte, Erreur, Res};
 use beta1_datachain::manifeste::{self, Source};
+use beta1_datachain::nettoyage;
 use beta1_datachain::orchestre::{self, Edition, Plan};
 use beta1_datachain::telechargement::{self, Options};
 use clap::Parser;
@@ -47,6 +48,10 @@ struct Cli {
     /// Ne rien télécharger : les sources doivent déjà être là.
     #[arg(long)]
     sans_telechargement: bool,
+    /// Publications complètes gardées en plus de la courante (les plus
+    /// récentes) ; les autres sont supprimées une fois celle-ci complète.
+    #[arg(long, default_value_t = 1)]
+    garder: usize,
 }
 
 fn main() -> ExitCode {
@@ -75,6 +80,7 @@ fn executer(cli: &Cli) -> Res<()> {
     let fin = cli.tiles.join(&cli.publication);
     if fin.join("COMPLET").exists() {
         journal(&format!("{} déjà publiée", fin.display()));
+        nettoyer(cli);
         return Ok(());
     }
     let travail = cli.tiles.join(format!("{}.partiel", cli.publication));
@@ -213,7 +219,20 @@ fn executer(cli: &Cli) -> Res<()> {
     fs::write(travail.join("MANIFESTE"), m).ctx("MANIFESTE")?;
     fs::write(travail.join("COMPLET"), "").ctx("COMPLET")?;
     fs::rename(&travail, &fin).ctx(fin.display())?;
+    nettoyer(cli);
     Ok(())
+}
+
+/// Supprime les anciennes publications ; une erreur est signalée sans faire
+/// échouer la publication, déjà complète.
+fn nettoyer(cli: &Cli) {
+    let b = nettoyage::nettoyer(&cli.tiles, &cli.publication, cli.garder, std::time::SystemTime::now());
+    for n in &b.supprimees {
+        journal(&format!("ancienne publication supprimée : {n}"));
+    }
+    for e in &b.erreurs {
+        journal(&format!("nettoyage : {e}"));
+    }
 }
 
 fn arg(p: &Path) -> String {
