@@ -33,6 +33,7 @@ pub mod population;
 pub mod portes;
 pub mod raster;
 pub mod relief;
+pub mod reutilisation;
 pub mod tuile;
 pub mod zone;
 
