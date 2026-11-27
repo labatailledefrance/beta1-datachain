@@ -188,9 +188,12 @@ pub struct StatsRecousure {
     pub entree: usize,
     pub sortie: usize,
     pub jointures: usize,
-    /// Même (identifiant, rang) deux fois : compté, gardé (arête parallèle,
-    /// sans effet sur un plus court chemin ; aucun sur la France de P-26).
+    /// Rangs déjà couverts par le fragment précédent (même tile lue deux
+    /// fois, départements qui se recouvrent) : retirés.
     pub doublons: usize,
+    /// Rangs qui débordent en partie du fragment précédent : incohérence des
+    /// données, gardés à part (deux arêtes).
+    pub chevauchements: usize,
     /// Rangs consécutifs mais extrémités différentes.
     pub ruptures: usize,
     /// Rangs non consécutifs (partie hors des tiles).
@@ -211,8 +214,11 @@ pub fn recoudre(mut fs: Vec<Fragment>) -> (Vec<Fragment>, StatsRecousure) {
         if let Some(p) = out.last_mut()
             && p.id == f.id
         {
-            if f.r0 <= p.r1 {
+            if f.r1 <= p.r1 {
                 st.doublons += 1;
+                continue;
+            } else if f.r0 <= p.r1 {
+                st.chevauchements += 1;
             } else if f.r0 == p.r1 + 1 {
                 if p.pts.last().map(|q| [q[0], q[1]]) == f.pts.first().map(|q| [q[0], q[1]]) {
                     if p.attr != f.attr {
@@ -489,10 +495,11 @@ pub fn executer(dossiers: &[PathBuf], sortie: &Path) -> Res<String> {
     dire(&format!("{} fragments, {} ponts", frags.len(), ponts.len()));
     let (frags, st) = recoudre(frags);
     dire(&format!(
-        "recousu : {} fragments ; entre départements {} jointures, {} doublons, {} ruptures, {} trous, {} attributs différents",
+        "recousu : {} fragments ; entre départements {} jointures, {} doublons retirés, {} chevauchements, {} ruptures, {} trous, {} attributs différents",
         frags.len(),
         st.jointures,
         st.doublons,
+        st.chevauchements,
         st.ruptures,
         st.trous,
         st.attr_differents
@@ -562,9 +569,14 @@ mod tests {
             morceau(2, 0, &[[0, 5], [1, 5]]),
             morceau(2, 0, &[[0, 5], [1, 5]]),
         ];
+        // Deux départements qui ont lu la même tile : chacun a le morceau (2, 0).
+        let (a, b) = (&ms[..5], &ms[4..]);
+        let mut f = recoudre(de_morceaux(a.to_vec())).0;
+        f.extend(recoudre(de_morceaux(b.to_vec())).0);
+        let (croise, sc) = recoudre(f);
+        assert_eq!((croise.len(), sc.doublons), (3, 1));
         let (tout, st) = recoudre(de_morceaux(ms.clone()));
-        // Le doublon reste un fragment à part (voir `StatsRecousure::doublons`).
-        assert_eq!((tout.len(), st.jointures, st.trous, st.doublons), (4, 2, 1, 1));
+        assert_eq!((tout.len(), st.jointures, st.trous, st.doublons), (3, 2, 1, 1));
         assert_eq!(tout[0].pts.len(), 4);
         // Par moitiés (deux « départements »), puis ensemble : même résultat.
         let (a, b) = ms.split_at(3);
@@ -573,6 +585,19 @@ mod tests {
         let deux = recoudre(f).0;
         let cle = |v: &[Fragment]| v.iter().map(|f| (f.id, f.r0, f.r1, f.pts.clone())).collect::<Vec<_>>();
         assert_eq!(cle(&deux), cle(&tout));
+        assert_eq!(cle(&croise), cle(&tout));
+        // Morceau dont le rang est couvert par un fragment déjà recousu : retiré.
+        let mut f = tout.clone();
+        f.extend(de_morceaux(vec![morceau(1, 1, &[[10, 0], [20, 0]])]));
+        let (r, s) = recoudre(f);
+        assert_eq!((cle(&r), s.doublons), (cle(&tout), 1));
+        // Chevauchement partiel (rangs 1 à 3 après 0 à 2) : gardé à part, compté.
+        let mut c = de_morceaux(vec![morceau(1, 1, &[[10, 0], [40, 0]])]);
+        c[0].r1 = 3;
+        let mut f = tout.clone();
+        f.extend(c);
+        let (r, s) = recoudre(f);
+        assert_eq!((r.len(), s.chevauchements), (4, 1));
     }
 
     #[test]
