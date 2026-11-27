@@ -18,6 +18,7 @@ use beta1_datachain::erreur::{Contexte, Erreur, Res};
 use beta1_datachain::manifeste::{self, Source};
 use beta1_datachain::nettoyage;
 use beta1_datachain::orchestre::{self, Edition, Plan};
+use beta1_datachain::reutilisation;
 use beta1_datachain::telechargement::{self, Options};
 use clap::Parser;
 
@@ -52,12 +53,18 @@ struct Cli {
     /// récentes) ; les autres sont supprimées une fois celle-ci complète.
     #[arg(long, default_value_t = 1)]
     garder: usize,
+    /// Écrire la clé de réutilisation (`CLE`) dans les départements terminés de
+    /// la publication existante --publication, produits par une image antérieure
+    /// au même code de département, puis sortir : ils serviront de cache.
+    #[arg(long)]
+    adopter: bool,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let t0 = Instant::now();
     match executer(&cli) {
+        Ok(()) if cli.adopter => ExitCode::SUCCESS,
         Ok(()) => {
             journal(&format!("publication {} complète en {:.0} s", cli.publication, t0.elapsed().as_secs_f64()));
             ExitCode::SUCCESS
@@ -78,6 +85,9 @@ fn executer(cli: &Cli) -> Res<()> {
         return Err("--publication : [a-z0-9-], 1 à 64 caractères".into());
     }
     let fin = cli.tiles.join(&cli.publication);
+    if cli.adopter {
+        return adopter(cli);
+    }
     if fin.join("COMPLET").exists() {
         journal(&format!("{} déjà publiée", fin.display()));
         nettoyer(cli);
@@ -151,6 +161,9 @@ fn executer(cli: &Cli) -> Res<()> {
     }
 
     // 4. Départements : un processus chacun.
+    // Un département de même clé dans une autre publication du volume est
+    // repris par liens physiques (voir `reutilisation`).
+    let relief = cli.sources.join("derives/relief");
     let depts: Vec<(&String, &(u8, PathBuf))> = plan.departements.iter().collect();
     parallele(cli.processus, &depts, |(d, (z, gpkg))| {
         let sortie = travail.join("departements").join(d);
@@ -159,6 +172,13 @@ fn executer(cli: &Cli) -> Res<()> {
         }
         let partiel = travail.join("departements").join(format!("{d}.partiel"));
         let _ = fs::remove_dir_all(&partiel);
+        let cle = reutilisation::cle(d, *z, &choisies, &relief, &travail.join(format!("national/z{z}.bin")))?;
+        if let Some(src) = reutilisation::trouver(&cli.tiles, &cli.publication, d, &cle) {
+            reutilisation::lier(&src, &partiel)?;
+            fs::rename(&partiel, &sortie).ctx(sortie.display())?;
+            journal(&format!("{d} : repris de {}, empreinte {}", src.display(), empreinte(&sortie)?));
+            return Ok(());
+        }
         let mut a: Vec<String> = vec![
             "departement".into(),
             "--gpkg".into(),
@@ -185,6 +205,8 @@ fn executer(cli: &Cli) -> Res<()> {
         }
         let t = Instant::now();
         executer_commande(&chaine, &a, &journaux.join(format!("{d}.log")), cli.threads)?;
+        let f = partiel.join(reutilisation::FICHIER);
+        fs::write(&f, format!("{cle}\n")).ctx(f.display())?;
         fs::rename(&partiel, &sortie).ctx(sortie.display())?;
         journal(&format!("{d} : {:.0} s, empreinte {}", t.elapsed().as_secs_f64(), empreinte(&sortie)?));
         Ok(())
@@ -220,6 +242,39 @@ fn executer(cli: &Cli) -> Res<()> {
     fs::write(travail.join("COMPLET"), "").ctx("COMPLET")?;
     fs::rename(&travail, &fin).ctx(fin.display())?;
     nettoyer(cli);
+    Ok(())
+}
+
+/// `--adopter` : clés des départements terminés d'une publication existante
+/// (complète ou interrompue), calculées avec ses propres références nationales.
+fn adopter(cli: &Cli) -> Res<()> {
+    let toutes = manifeste::lire(MANIFESTE).map_err(|e| Erreur(e.to_string()))?;
+    let choisies: Vec<Source> = toutes
+        .into_iter()
+        .filter(|s| s.zone == "FRANCE" || cli.zones.is_empty() || cli.zones.contains(&s.zone))
+        .collect();
+    let plan = orchestre::planifier(&choisies, &cli.sources).map_err(Erreur)?;
+    let fin = cli.tiles.join(&cli.publication);
+    let racine = if fin.is_dir() { fin } else { cli.tiles.join(format!("{}.partiel", cli.publication)) };
+    let relief = cli.sources.join("derives/relief");
+    let (mut adoptes, mut deja, mut absents) = (0, 0, 0);
+    for (d, (z, _)) in &plan.departements {
+        let dossier = racine.join("departements").join(d);
+        let f = dossier.join(reutilisation::FICHIER);
+        if !dossier.join("controles.txt").is_file() {
+            absents += 1;
+        } else if f.exists() {
+            deja += 1;
+        } else {
+            let cle = reutilisation::cle(d, *z, &choisies, &relief, &racine.join(format!("national/z{z}.bin")))?;
+            fs::write(&f, format!("{cle}\n")).ctx(f.display())?;
+            adoptes += 1;
+        }
+    }
+    journal(&format!(
+        "{} : {adoptes} départements adoptés, {deja} avaient déjà leur clé, {absents} non terminés",
+        racine.display()
+    ));
     Ok(())
 }
 

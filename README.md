@@ -82,6 +82,8 @@ tiles/<id>.partiel/                    publication en cours (PVC « tiles »)
 tiles/<id>/departements/D029/…         publication terminée, avec graphe.bin, MANIFESTE (empreinte par département et du graphe) et COMPLET
 ```
 
+**Départements repris d'une publication à l'autre** : chaque département produit porte une clé (`CLE`, hash de ses sources, du relief et de la référence nationale de sa zone, des carreaux de l'INSEE, de la version de sa production et de l'empreinte de l'essai de Brest). Un département de même clé dans une autre publication du volume, complète ou interrompue, est repris par liens physiques : une nouvelle image qui ne change que le graphe ne refait que le graphe (Finistère : 36 s au lieu de 314). Une modification de la sortie d'un département change l'empreinte de Brest ; si Brest ne la voit pas (outre-mer, montagne…), monter `reutilisation::VERSION`. `datachain --adopter --publication <id>` écrit les clés d'une publication produite par une image antérieure au même code de département.
+
 Une fois la publication complète (ou déjà là), le Job **supprime les anciennes** : il garde la courante et la plus récente des autres (`--garder 1` : les pods de la version précédente la servent encore pendant la bascule), supprime les autres publications complètes et les `.partiel` sans écriture depuis 24 h ; une production en cours n'est jamais touchée.
 
 Chaque résultat est écrit à part puis renommé : un pod tué reprend où il en était ; une publication complète relancée sort aussitôt. Finistère seul : 351 s, 7,8 Go de mémoire (2 processus de 8 threads).
