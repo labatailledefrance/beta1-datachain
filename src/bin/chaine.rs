@@ -6,6 +6,7 @@
 //! chaine national --source D029.gpkg … --sortie national-z0.bin
 //! chaine departement --gpkg D029.gpkg --dept 29 --zone 0 --national … --relief … --sortie …
 //! chaine controle DOSSIER…
+//! chaine graphe --sortie graphe.bin DOSSIER…
 //! chaine verifier-relief PAQUET…
 //! ```
 
@@ -14,7 +15,7 @@ use std::process::ExitCode;
 
 use beta1_datachain::erreur::{Contexte, Res};
 use beta1_datachain::geo::TileId;
-use beta1_datachain::{chaine, controle, depot, national, relief};
+use beta1_datachain::{chaine, controle, depot, graphe, national, relief};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -57,6 +58,12 @@ enum Commande {
     Departement(Departement),
     /// Contrôle des tiles écrites (un ou plusieurs départements).
     Controle { dossiers: Vec<PathBuf> },
+    /// Départements produits → graphe routier national (ordre CCH compris).
+    Graphe {
+        #[arg(long)]
+        sortie: PathBuf,
+        dossiers: Vec<PathBuf>,
+    },
     /// Décode toutes les dalles de paquets de relief.
     VerifierRelief { paquets: Vec<PathBuf> },
 }
@@ -167,6 +174,9 @@ fn executer(cli: Cli) -> Res<ExitCode> {
         }
         Commande::Controle { dossiers } => {
             return Ok(if controle::executer(&dossiers)? == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) });
+        }
+        Commande::Graphe { sortie, dossiers } => {
+            println!("empreinte {}", graphe::executer(&dossiers, &sortie)?);
         }
         Commande::VerifierRelief { paquets } => {
             let mut mal = 0;

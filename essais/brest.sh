@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Jeu d'essai de Brest : 25 tiles (5 × 5 km) autour du centre-ville, produites
 # depuis les vraies sources du Finistère, et leur empreinte comparée à
-# essais/brest.empreinte. La CI le lance à chaque PR.
+# essais/brest.empreinte ; puis leur graphe routier (ordre CCH compris),
+# comparé à essais/brest-graphe.empreinte. La CI le lance à chaque PR.
 #
 #   essais/brest.sh preparer DOSSIER   sources → entrées (GeoPackage, relief réduit, national) ; ~5 Go téléchargés
 #   essais/brest.sh verifier DOSSIER   entrées → tiles, comparées à l'empreinte attendue
@@ -48,6 +49,10 @@ case $ETAPE in
     echo "empreinte obtenue : $obtenue"
     echo "empreinte attendue : $attendue"
     test "$obtenue" = "$attendue"
+    graphe=$("$BIN/chaine" graphe --sortie "$D/graphe.bin" "$D/sortie" | awk '$1 == "empreinte" { print $2 }')
+    attendue=$(tr -d '[:space:]' < "$ICI/brest-graphe.empreinte")
+    echo "graphe : $graphe (attendu : $attendue)"
+    test "$graphe" = "$attendue"
     ;;
   *)
     echo "étape inconnue : $ETAPE (preparer ou verifier)" >&2

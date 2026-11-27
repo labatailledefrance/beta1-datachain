@@ -191,11 +191,25 @@ fn executer(cli: &Cli) -> Res<()> {
         .map_err(|e| Erreur(format!("contrôle non conforme ({e}) : voir journaux/controle.log")))?;
     journal("contrôle : CONFORME");
 
-    // 6. Manifeste de la publication, marqueur, renommage.
+    // 6. Graphe routier national, ordre CCH compris : un seul processus, tous les threads.
+    let graphe = travail.join("graphe.bin");
+    if !graphe.exists() {
+        let mut a = vec!["graphe".into(), "--sortie".into(), arg(&graphe)];
+        a.extend(plan.departements.keys().map(|d| arg(&travail.join("departements").join(d))));
+        let t = Instant::now();
+        executer_commande(&chaine, &a, &journaux.join("graphe.log"), cli.processus * cli.threads)?;
+        journal(&format!("graphe : {:.0} s", t.elapsed().as_secs_f64()));
+    }
+    let b = fs::read(&graphe).ctx(graphe.display())?;
+    let empreinte_graphe = blake3::hash(&b).to_hex()[..16].to_string();
+    drop(b);
+
+    // 7. Manifeste de la publication, marqueur, renommage.
     let mut m = format!("publication {}\nversion {}\n", cli.publication, env!("CARGO_PKG_VERSION"));
     for d in plan.departements.keys() {
         m.push_str(&format!("{d} {}\n", empreinte(&travail.join("departements").join(d))?));
     }
+    m.push_str(&format!("graphe {empreinte_graphe}\n"));
     fs::write(travail.join("MANIFESTE"), m).ctx("MANIFESTE")?;
     fs::write(travail.join("COMPLET"), "").ctx("COMPLET")?;
     fs::rename(&travail, &fin).ctx(fin.display())?;

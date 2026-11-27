@@ -116,8 +116,8 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "beta1-common"
-version = "0.3.0"
-source = "git+https://github.com/labatailledefrance/beta1-common?tag=v0.3.0#93148ac5aab7a13bd31dd1b3d93f997dd3ca4269"
+version = "0.4.0"
+source = "git+https://github.com/labatailledefrance/beta1-common?tag=v0.4.0#a86662336de5157384f441cf02b5261d7f42279e"
 dependencies = [
  "blake3",
  "ruzstd",
@@ -129,6 +129,7 @@ version = "0.1.0"
 dependencies = [
  "beta1-common",
  "blake3",
+ "cch",
  "clap",
  "i_overlay",
  "md-5",
@@ -213,6 +214,16 @@ dependencies = [
  "jobserver",
  "libc",
  "shlex",
+]
+
+[[package]]
+name = "cch"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15568834f8c95df9da186c4088b4b201e924dc051e87806be0968b6a0eec363b"
+dependencies = [
+ "memmap2",
+ "rayon",
 ]
 
 [[package]]
@@ -722,6 +733,15 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "memmap2"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "miniz_oxide"

@@ -11,7 +11,7 @@ publish = false
 # Versions exactes, publiées depuis au moins deux semaines.
 [dependencies]
 # Format des tiles, partagé avec le serveur et le client (même tag partout).
-beta1-common = { version = "=0.3.0", git = "https://github.com/labatailledefrance/beta1-common", tag = "v0.3.0" }
+beta1-common = { version = "=0.4.0", git = "https://github.com/labatailledefrance/beta1-common", tag = "v0.4.0" }
 # HTTP bloquant, TLS en Rust (rustls), sans décompression transparente : les
 # octets reçus sont ceux qu'on vérifie.
 ureq = { version = "=3.5.1", default-features = false, features = ["rustls"] }
@@ -32,6 +32,8 @@ zstd = "=0.14.3"
 i_overlay = "=9.1.0"
 rayon = "=1.12.0"
 blake3 = "=1.8.7"
+# Ordre de la hiérarchie routière (CCH, dissection imbriquée), version de P-09 et P-26.
+cch = "=0.3.0"
 # Carreaux de 200 m de l'INSEE (Parquet), API par lignes, sans Arrow.
 parquet = { version = "=59.3.2", default-features = false, features = ["snap", "zstd", "flate2", "flate2-rust_backend", "lz4", "brotli"] }
 
