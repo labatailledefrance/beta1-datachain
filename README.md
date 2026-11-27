@@ -82,6 +82,8 @@ tiles/<id>.partiel/                    publication en cours (PVC « tiles »)
 tiles/<id>/departements/D029/…         publication terminée, avec graphe.bin, MANIFESTE (empreinte par département et du graphe) et COMPLET
 ```
 
+Une fois la publication complète (ou déjà là), le Job **supprime les anciennes** : il garde la courante et la plus récente des autres (`--garder 1` : les pods de la version précédente la servent encore pendant la bascule), supprime les autres publications complètes et les `.partiel` sans écriture depuis 24 h ; une production en cours n'est jamais touchée.
+
 Chaque résultat est écrit à part puis renommé : un pod tué reprend où il en était ; une publication complète relancée sort aussitôt. Finistère seul : 351 s, 7,8 Go de mémoire (2 processus de 8 threads).
 
 Image `ghcr.io/labatailledefrance/beta1-datachain` (48 Mo), publiée et signée par la CI après fusion : base `dhi.io/static`, non root, système de fichiers en lecture seule possible ; HTTPS par rustls et les certificats racines embarqués.
